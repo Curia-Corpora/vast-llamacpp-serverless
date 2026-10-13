@@ -1,1 +1,2 @@
-# vastai is provided by the Vast start-server script; add extra deps here if needed
+# Pulled in by Vast's start-server script (pip install -r requirements.txt)
+vastai-sdk
