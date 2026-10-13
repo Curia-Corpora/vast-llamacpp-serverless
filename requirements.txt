@@ -1,0 +1,1 @@
+# vastai is provided by the Vast start-server script; add extra deps here if needed
