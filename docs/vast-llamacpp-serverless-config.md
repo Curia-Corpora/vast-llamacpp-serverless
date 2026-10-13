@@ -38,7 +38,7 @@ direct_port_count>=2 compute_cap>=1200 cuda_max_good>=12.8 gpu_ram>=90000 gpu_to
 
 ## 4. On-start script
 
-The script is model-agnostic. Every model-specific value is an environment variable whose default is this model.
+This is the same script as `scripts/onstart.sh`, which `scripts/setup.sh` uses; keep the two in sync. It is model-agnostic. Every model-specific value is an environment variable whose default is this model.
 
 ```bash
 #!/bin/bash
@@ -55,6 +55,9 @@ KV_TYPE="${KV_TYPE:-q8_0}"                                         # f16 for ful
 SLOTS="${SLOTS:-5}"                       # concurrent sequences (llama-server -np)
 CTX_PER_SLOT="${CTX_PER_SLOT:-262144}"    # context each slot gets
 TOTAL_CTX=$((SLOTS * CTX_PER_SLOT))       # -c is the TOTAL across slots
+# The value "none" also disables MMPROJ_FILE / EXTRA_ARGS (empty values can get dropped upstream)
+if [ "$MMPROJ_FILE" = "none" ]; then MMPROJ_FILE=""; fi
+if [ "$EXTRA_ARGS" = "none" ]; then EXTRA_ARGS=""; fi
 # --------------------------------------------------------------------------------
 
 mkdir -p /workspace/models
@@ -97,9 +100,10 @@ nohup /workspace/llama.cpp/build/bin/llama-server \
 until curl -sf http://127.0.0.1:8080/health >/dev/null; do sleep 5; done
 echo "llama-server ready"
 
-# --- Serverless only: add Vast's PyWorker bootstrap line here ---
-# Copy the final line from a stock Vast serverless template (e.g. the vLLM one).
-# It clones $PYWORKER_REPO, installs requirements.txt and runs worker.py.
+# --- Serverless: start the Vast PyWorker (clones $PYWORKER_REPO, installs requirements.txt, runs worker.py) ---
+# Override with PYWORKER_BOOTSTRAP_CMD if Vast changes its bootstrap script.
+BOOTSTRAP="${PYWORKER_BOOTSTRAP_CMD:-curl -L https://raw.githubusercontent.com/vast-ai/pyworker/main/start_server.sh | bash}"
+bash -c "$BOOTSTRAP"
 ```
 
 Notes:

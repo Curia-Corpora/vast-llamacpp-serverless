@@ -22,19 +22,36 @@ client -> Vast router -> PyWorker (:3000) -> llama-server (127.0.0.1:8080)
 | Path | Purpose |
 |---|---|
 | `worker.py` | The PyWorker: routes, workload estimation, benchmark, readiness log matching |
-| `requirements.txt` | Extra Python dependencies (currently none; see the file for notes) |
+| `requirements.txt` | Installed by Vast's start-server script (`vastai-sdk`, which provides `Worker`/`WorkerConfig`) |
+| `scripts/setup.sh` | Creates the template, endpoint and workergroup with the `vastai` CLI, driven by `.env` |
+| `scripts/onstart.sh` | The template's on-start script (build llama.cpp, download the model, start llama-server, start the PyWorker) |
+| `.env.example` | Every setting `setup.sh` understands, with defaults |
 | `docs/vast-llamacpp-serverless-config.md` | Full template configuration: Docker image and options, search filters, on-start script, capacity notes, vision, model swapping |
 
 (Adjust the doc path if yours differs.)
 
-## Quick start
+## Automated setup (vastai CLI)
+
+```bash
+pip install vastai
+cp .env.example .env        # fill in VASTAI_KEY and HF_TOKEN (.env is gitignored; never commit it)
+./scripts/setup.sh --dry-run   # print the vastai commands first
+./scripts/setup.sh             # create template, endpoint and workergroup
+./scripts/setup.sh status
+```
+
+Only `VASTAI_KEY` and `HF_TOKEN` are required; every other setting in `.env.example` has a default. The script saves the created IDs in `.vast-state` and reuses them on re-runs (`--force` creates new resources instead). By default `HF_TOKEN` is stored as a Vast account environment variable rather than embedded in the template. `TEST_WORKERS` defaults to 1 because each test worker rents a GPU while benchmarking.
+
+The CLI syntax was taken from Vast's docs and the script was tested only against a stub CLI. Use `--dry-run` first, and see the notes in [Before you rely on it](#before-you-rely-on-it).
+
+## Quick start (manual)
 
 1. Make this repo **public** (Vast clones it without credentials).
 2. Create a Serverless template on Vast using the values in [`docs/vast-llamacpp-serverless-config.md`](docs/vast-llamacpp-serverless-config.md):
    - Docker image `nvidia/cuda:12.8.1-devel-ubuntu22.04` (Blackwell needs CUDA 12.8+)
    - the Docker options, search filters, and on-start script from the doc
    - `-e PYWORKER_REPO=https://github.com/<you>/<this-repo>`
-3. Add Vast's PyWorker bootstrap line to the end of the on-start script. Copy it from one of Vast's stock serverless templates; it isn't reproduced here.
+3. Use `scripts/onstart.sh` as the on-start script. It ends by running Vast's PyWorker bootstrap (`start_server.sh`), which is unverified against current Vast templates; compare it with a stock template's on-start.
 4. Create an Endpoint and Workergroup from the template.
 
 ## Configuration
@@ -87,7 +104,8 @@ Images are sent as standard OpenAI `image_url` content parts, provided the templ
 
 - **Readiness lines.** Vast matches `on_load` log lines by exact prefix. The values in `LOAD_MSGS` in `worker.py` are llama.cpp's usual output but are unverified for your build. Check with `grep -n "listening\|idle" /workspace/llama-server.log`. If none match, the worker stays on "loading".
 - **Test on a normal instance first.** Run the on-start script by hand on an on-demand instance with the same GPU and image, and confirm `curl localhost:8080/v1/models` works before using Serverless.
-- **`vastai` package.** `requirements.txt` assumes the PyWorker environment already provides it. If you see `ModuleNotFoundError: No module named 'vastai'`, add `vastai-sdk`.
+- **`vastai` package.** `requirements.txt` lists `vastai-sdk` (the package Vast's docs name for the SDK). If the worker log shows an import error for `Worker`/`WorkerConfig`, try `vastai` instead.
+- **CLI output parsing.** `setup.sh` reads the template hash and IDs from the CLI's `--raw` JSON. If it can't find them it prints the output; put `TEMPLATE_HASH=...` in `.env` and re-run.
 - **`model_healthcheck_url`.** It appears only in Vast's sessions example. Remove it from `worker.py` if your PyWorker version rejects it.
 - **Long contexts.** Cold prefill of very long prompts can take many minutes, and session requests have a 600 s worker timeout. Use sessions so a long prefix is processed once.
 - **Model support.** llama.cpp must support the model's architecture. A very new architecture may need a fork.

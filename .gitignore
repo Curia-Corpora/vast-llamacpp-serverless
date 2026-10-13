@@ -1,0 +1,4 @@
+.env
+.vast-state
+__pycache__/
+instance-*-instance-logs.txt
