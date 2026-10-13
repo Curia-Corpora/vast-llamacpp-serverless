@@ -151,10 +151,25 @@ if [ "$CMD" = "update" ]; then
   [ -n "${TEMPLATE_HASH:-}" ] || die "No TEMPLATE_HASH in $STATE_FILE - run './scripts/setup.sh create --force' instead"
   build_template_env
   echo "Updating template $TEMPLATE_HASH (on-start script + env)"
-  vast update template "$TEMPLATE_HASH" \
+  out="$(vast update template "$TEMPLATE_HASH" \
       --name "$TEMPLATE_NAME" --image "$IMAGE" --env "$TEMPLATE_ENV" \
       --onstart-cmd "$(cat "$ROOT/scripts/onstart.sh")" \
-      --search_params "$SEARCH_PARAMS" --disk_space "$DISK_GB" --ssh --direct
+      --search_params "$SEARCH_PARAMS" --disk_space "$DISK_GB" --ssh --direct)"
+  # Vast issues a NEW hash_id on every update (same numeric id) - any workergroup
+  # must be created against the new hash, so track it in state.
+  if [ "$DRY_RUN" = 1 ]; then
+    echo "      (dry run)"
+  else
+    NEW_HASH="$(printf '%s' "$out" | json_find hash_id || true)"
+    if [ -n "$NEW_HASH" ] && [ "$NEW_HASH" != "$TEMPLATE_HASH" ]; then
+      grep -v '^TEMPLATE_HASH=' "$STATE_FILE" > "$STATE_FILE.tmp" 2>/dev/null || : > "$STATE_FILE.tmp"
+      echo "TEMPLATE_HASH=$NEW_HASH" >> "$STATE_FILE.tmp"
+      mv "$STATE_FILE.tmp" "$STATE_FILE"
+      echo "      template hash: $TEMPLATE_HASH -> $NEW_HASH (state updated; use the new hash for workergroups)"
+    else
+      echo "      template hash: ${NEW_HASH:-$TEMPLATE_HASH}"
+    fi
+  fi
   cat <<UPDATE_DONE
 
 Template updated. Existing workers keep the old on-start script until they recycle.
